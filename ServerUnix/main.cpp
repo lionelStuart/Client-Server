@@ -20,13 +20,15 @@ int main() {
     struct sockaddr_in client_addr; // адресная информация запрашивающей стороны (клиента)
     char buf[1024];
 
-    int sin_size;
+    socklen_t sin_size;
 
     // создание сокета
     if ( (mySocket = socket(AF_INET, SOCK_STREAM, 0)) == -1){
         perror("Socket error");
         exit(1);
     }
+
+    cout << "OK : Create socket" << endl;
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
@@ -40,11 +42,15 @@ int main() {
         exit(1);
     }
 
+    cout << "OK : Bind" << endl;
+
     // Создание очереди прослушивания сети на порту MYPORT
     if ( listen(mySocket, BACKLOG) == -1 ){
         perror("Listen error");
         exit(1);
     }
+
+    cout << "OK : Listen in process" << endl;
 
     // цикл accept()
     while(1){
@@ -55,12 +61,14 @@ int main() {
         }
 
         // запрос на соединение принят, теперь нужно ответить
-        cout << "Accept complete" << endl;
+        cout << "OK : Accept" << endl;
 
         if ( !fork() ){
             if ( send(newSocket, "Hello, World\n", 13, 0) == -1 ){
                 perror("Send error");
             }
+
+            cout << "OK : Send to client" << endl;
 
             close(newSocket);
             exit(0);
