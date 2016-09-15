@@ -64,11 +64,22 @@ int main() {
         cout << "OK : Accept" << endl;
 
         if ( !fork() ){
-            if ( send(newSocket, "Hello, World\n", 13, 0) == -1 ){
+            int numbyte = recv(newSocket, (char*)&buf, sizeof(buf), 0);
+            buf[numbyte] = '\0';
+
+            cout << "OK : Resv message '" << buf << "'" << endl;
+
+            char message[1024];
+            strcpy(message, "Hello, ");
+            strcat(message, buf);
+
+            cout << "Send to client '" << message << "'... ";
+
+            if ( send(newSocket, message, sizeof(message), 0) == -1 ){
                 perror("Send error");
             }
 
-            cout << "OK : Send to client" << endl;
+            cout << "OK" << endl;
 
             close(newSocket);
             exit(0);
