@@ -13,9 +13,78 @@
 using namespace std;
 
 #define MYPORT 4000
-#define BACKLOG 10
-#define BUF_SIZE 10
+#define BUF_SIZE 1024
 #define MAX_CLIENT 3
+#define MAX_NEWS 50
+#define MAX_THEMES 50
+
+// *************************************************************************************
+
+// Логика индивидуального задания - Публикация/чтение новостей (1.2.13)
+
+struct Article{
+    int id;
+    char theme[BUF_SIZE];
+    char title[BUF_SIZE];
+    char body[BUF_SIZE];
+};
+struct Article news[MAX_NEWS];
+int newsCount = 0;
+int newsIDCount = 0;
+
+char themes[MAX_THEMES][BUF_SIZE];
+int themesCount = 0;
+
+void addTheme(char* theme){
+    strcpy(themes[themesCount++], theme);
+}
+bool checkTheme(char* theme){
+    for (int i = 0; i < themesCount; ++i) {
+        if (strcmp(themes[i], theme)){
+            return true;
+        }
+    }
+    return false;
+}
+
+int addArticle(char* theme, char* title, char* body){
+
+    if (newsCount >= MAX_NEWS)
+        return -1;
+
+    if (!checkTheme(theme))
+        return -2;
+
+    strcpy(news[newsCount].theme, theme);
+    strcpy(news[newsCount].body, body);
+    strcpy(news[newsCount].title, title);
+
+    news[newsCount].id = newsIDCount++;
+
+    newsCount++;
+
+    return news[newsCount - 1].id;
+}
+
+bool delArticle(int id){
+    bool find = false;
+    for (int i = 0; i < newsCount; ++i) {
+        if (!find && news[i].id == id){
+            find = true;
+        }
+        else if (find){
+            news[i-1] = news[i];
+        }
+    }
+    return find;
+}
+
+
+// ************************************************************************************
+
+// ************************************************************************************
+
+// Все, что связанно с работой сервера
 
 struct SocketSettings{
     int socket;
@@ -48,7 +117,6 @@ int add_desc(int socket){
     pthread_mutex_unlock(&lock);
     return id;
 }
-
 int add_tdesc(int id, pthread_t snif_thread){
     if (id == 0)
         return 1;
@@ -64,7 +132,6 @@ int add_tdesc(int id, pthread_t snif_thread){
 
     return 0;
 }
-
 int add_sdesc(int id, struct sockaddr_in client){
     if (id == 0)
         return 1;
@@ -223,7 +290,24 @@ void* acceptFun(void* socktmp){
     }
 }
 
+// **************************************************************************************
+
 int main() {
+
+    // Подготовка структуры
+
+    for (int i=0; i<MAX_NEWS; i++){
+        news[i].id = -1;
+        strcpy(news[i].body, "");
+        strcpy(news[i].theme, "");
+        strcpy(news[i].title, "");
+    }
+
+    for (int i=0; i<MAX_THEMES; i++){
+        strcpy(themes[i], "");
+    }
+
+    // Запуск сервера
 
     SocketSettings mySocket;
 
