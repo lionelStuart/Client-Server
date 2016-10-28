@@ -17,6 +17,82 @@ using namespace std;
 #define BUF_SIZE 10
 #define MAX_CLIENT 3
 
+struct SocketSettings{
+    int socket;
+    struct sockaddr_in addr;
+};
+
+struct ClientStruct{
+    int id;
+    int socket;
+    pthread_t thread;
+    struct sockaddr_in addr;
+};
+struct ClientStruct clientStruct[100];
+
+pthread_mutex_t lock;
+
+void *clientFun(void *);
+void *acceptFun(void *);
+
+int add_desc(int socket){
+    int id = 0;
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < MAX_CLIENT; ++i) {
+        if (clientStruct[i].socket == 0){
+            clientStruct[i].socket = socket;
+            id = clientStruct[i].id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&lock);
+    return id;
+}
+
+int add_tdesc(int id, pthread_t snif_thread){
+    if (id == 0)
+        return 1;
+
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < MAX_CLIENT; ++i) {
+        if (clientStruct[i].socket == id){
+            clientStruct[i].thread = snif_thread;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&lock);
+
+    return 0;
+}
+
+int add_sdesc(int id, struct sockaddr_in client){
+    if (id == 0)
+        return 1;
+
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < MAX_CLIENT; ++i) {
+        if (clientStruct[i].socket == id){
+            clientStruct[i].addr = client;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&lock);
+
+    return 0;
+}
+
+int shut(int id){
+    int ind = id -1;
+    pthread_mutex_lock(&lock);
+    if(clientStruct[ind].socket != 0){
+        if (shutdown(clientStruct[ind].socket, SHUT_RDWR) == 0){
+            close(clientStruct[ind].socket);
+        }
+    }
+    pthread_mutex_unlock(&lock);
+    return 0;
+}
+
 int readn(int socket, char* bf, int len){
     int load = 0;
     char tmpbuf[BUF_SIZE];
@@ -36,15 +112,12 @@ int readn(int socket, char* bf, int len){
 
 void* clientFun(void* newSocket){
     int socket =  * (int *)newSocket;
+    int numRead;
     char buf[BUF_SIZE];
     char ans[BUF_SIZE];
     memset(ans,0,BUF_SIZE);
 
-    while (1){
-        if (readn(socket, buf, BUF_SIZE) < 0){
-            cout << "Error: Recive from " << socket << " fail" << endl;
-            continue;
-        }
+    while ( (numRead = readn(socket, buf, BUF_SIZE)) > 0 ){
 
         if (strcmp(buf, "hello") == 0){
             strcpy(ans, "Welcome!");
@@ -57,74 +130,126 @@ void* clientFun(void* newSocket){
             break;
         }
     }
-    close(socket);
 
-    return 0;
+    if (numRead == 0) {
+        cout << "!! : Client disconnect" << endl;
+        if (shutdown(socket, SHUT_RDWR) == 0) {
+            cout << "OK : Shotdown client" << endl;
+            if (close(socket) == 0) {
+                cout << "OK : Client socket close" << endl;
+            } else {
+                cout << "!! : Close client socket fail" << endl;
+                pthread_mutex_lock(&lock);
+                for (int i = 0; i < MAX_CLIENT; ++i) {
+                    if (clientStruct[i].socket == socket) {
+                        clientStruct[i].socket = 0;
+                        break;
+                    }
+                }
+                pthread_mutex_unlock(&lock);
+            }
+        } else {
+            cout << "!! : Fail down client" << endl;
+            pthread_mutex_lock(&lock);
+            for (int i = 0; i < MAX_CLIENT; ++i) {
+                if (clientStruct[i].socket == socket) {
+                    clientStruct[i].socket = 0;
+                    break;
+                }
+            }
+            pthread_mutex_unlock(&lock);
+        }
+    }
+    else if (numRead == -1){
+        cout << "!! : Recv fail" << endl;
+    }
 }
 
-void* acceptFun(void* socket){
+void* acceptFun(void* socktmp){
 
-    int mySocket =*(int*) socket;
+    //SocketSettings mySocket = *(SocketSettings*) myStruct;
 
-    int newSocket[MAX_CLIENT];
-    int count = 0;
-    struct sockaddr_in client_addr;
-    socklen_t sin_size;
+    int sock = *(int*) socktmp;
+    int client_sock, size, *newSock, id;
+    struct sockaddr_in client;
+    size = sizeof(struct sockaddr_in);
 
-    pthread_t client_t[MAX_CLIENT];
+    while( (client_sock = accept(sock, (struct sockaddr*)&client, (socklen_t*)&size))) {
 
-    while(1){
-        sin_size = sizeof(struct sockaddr_in);
-        if (count < MAX_CLIENT) {
-            if ((newSocket[count] = accept(mySocket, (struct sockaddr *) &client_addr, &sin_size)) == -1) {
-                perror("Accept error");
-                break;
+        if (client_sock < 0) {
+            cout << "!! : Accept fail" << endl;
+            for (int i = 0; i < MAX_CLIENT; ++i) {
+                if (clientStruct[i].socket != 0)
+                    shut(clientStruct[i].id);
             }
 
-            // запрос на соединение принят, теперь нужно ответить
-            cout << "OK : Accept by " << newSocket[count] << " success" << endl;
+            for (int j = 0; j < MAX_CLIENT; ++j) {
+                if (clientStruct[j].socket != 0)
+                    pthread_join(clientStruct[j].thread, NULL);
+            }
 
-            pthread_create(&client_t[count], NULL, &clientFun, &newSocket[count]);
-            count++;
+            break;
         }
-        else{
-            continue;
+
+        cout << "OK : Accept by " << client_sock << endl;
+
+        id = add_desc(client_sock);
+        if (id == 0)
+            cout << "!! : Max client limit" << endl;
+        else {
+            pthread_t snif_thread;
+            newSock = (int *) malloc(1);
+            *newSock = client_sock;
+
+            add_sdesc(id, client);
+            if (pthread_create(&snif_thread, NULL, clientFun, (void *) newSock) < 0) {
+                cout << "!! : Create thread fail" << endl;
+                for (int i = 0; i < MAX_CLIENT; ++i) {
+                    if (clientStruct[i].socket != 0)
+                        shut(clientStruct[i].id);
+                }
+
+                for (int j = 0; j < MAX_CLIENT; ++j) {
+                    if (clientStruct[j].socket != 0)
+                        pthread_join(clientStruct[j].thread, NULL);
+                }
+
+            }
+
+            add_tdesc(id, snif_thread);
+
+            cout << "OK : Create new thread success" << endl;
         }
     }
-
-    for (int i = 0; i < count; i++){
-        close(newSocket[i]);
-    }
-    cout << "!! : All clients sockets close" << endl;
-
-    for (int i = 0; i < count; i++){
-        pthread_join(client_t[i], NULL);
-    }
-    cout << "!! : All clients threads join" << endl;
-
-    return NULL;
 }
 
 int main() {
-    int mySocket;        // mySocket - здесь слушаем, newSocket - сокет для нового подключения
-    struct sockaddr_in server_addr; // адресная информация сервера
+
+    SocketSettings mySocket;
+
+    pthread_mutex_lock(&lock);
+    for (int i = 0; i < MAX_CLIENT; ++i) {
+        clientStruct[i].socket = 0;
+        clientStruct[i].id = i+1;
+    }
+    pthread_mutex_unlock(&lock);
 
     // создание сокета
-    if ( (mySocket = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+    if ( (mySocket.socket = socket(AF_INET, SOCK_STREAM, 0)) == -1){
         perror("Socket error");
         exit(1);
     }
 
     cout << "OK : Create socket" << endl;
 
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-    server_addr.sin_port = htons(MYPORT);
+    mySocket.addr.sin_family = AF_INET;
+    mySocket.addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    mySocket.addr.sin_port = htons(MYPORT);
 
-    bzero(&(server_addr.sin_zero), 8);  // обнуление остальной части структуры
+    bzero(&(mySocket.addr.sin_zero), 8);  // обнуление остальной части структуры
 
     // свяывание соданного сокета с локальным адресом
-    if ( bind(mySocket, (struct sockaddr*)&server_addr, sizeof(struct sockaddr)) == -1){
+    if ( bind(mySocket.socket, (struct sockaddr*)&mySocket.addr, sizeof(struct sockaddr)) == -1){
         perror("Bind error");
         exit(1);
     }
@@ -132,7 +257,7 @@ int main() {
     cout << "OK : Bind" << endl;
 
     // Создание очереди прослушивания сети на порту MYPORT
-    if ( listen(mySocket, MAX_CLIENT) == -1 ){
+    if ( listen(mySocket.socket, MAX_CLIENT) == -1 ){
         perror("Listen error");
         exit(1);
     }
@@ -140,7 +265,7 @@ int main() {
     cout << "OK : Listen in process" << endl;
 
     pthread_t accept_t;
-    pthread_create(&accept_t, NULL, acceptFun, &mySocket);
+    pthread_create(&accept_t, NULL, acceptFun, &mySocket.socket);
 
     while(1){
         char command[10];
@@ -150,12 +275,21 @@ int main() {
         if (strncmp(command, "stop", 4) == 0) {
             break;
         }
+        else if (strncmp(command, "kill", 4) == 0) {
+            cout << "oops" << endl;
+        }
         else
             cout << "Error: Unknown command" << endl;
     }
 
+    if (shutdown(mySocket.socket, SHUT_RDWR) == 0){
+        cout << "OK : Down mySocket" << endl;
+        if (close(mySocket.socket) == 0)
+            cout << "OK : Close mySocket" << endl;
+    }
 
-    close(mySocket);
-    pthread_join(accept_t, (void**)server_addr);
-
+    if (pthread_join(accept_t, (void**)&mySocket.addr) != 0){
+        cout << "!! : Error accept join" << endl;
+    }
+    cout << "OK : Join accept thread" << endl;
 }
