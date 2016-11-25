@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <iostream>
 #include <pthread.h>
-#include <gmpxx.h>
+//#include <gmpxx.h>
 #include <stdlib.h>     /* atoi */
 
 using namespace std;
@@ -79,6 +79,7 @@ bool delArticle(int id){
             news[i-1] = news[i];
         }
     }
+    newsCount--;
     return find;
 }
 
@@ -189,7 +190,9 @@ void* clientFun(void* newSocket){
 
     while ( (numRead = readn(socket, buf, BUF_SIZE)) > 0 ){
 
-        if (strcmp(buf, "hello") == 0){                                        // Hello
+
+        if (strcmp(buf, "hello") == 0){
+
             strcpy(ans, "Welcome!");
             if (send(socket, ans, BUF_SIZE, 0) < 0){
                 cout << "Error: Send to " << socket << " fail" << endl;
@@ -286,7 +289,9 @@ void* clientFun(void* newSocket){
             memset(tmp, 0, BUF_SIZE);
             strncpy(tmp, buf+10, BUF_SIZE-10);
 
+            pthread_mutex_lock(&lock);
             strcpy(themes[themesCount++], tmp);
+            pthread_mutex_unlock(&lock);
 
             strcpy(ans, "Add theme success!");
             if (send(socket, ans, BUF_SIZE, 0) < 0){
@@ -296,6 +301,7 @@ void* clientFun(void* newSocket){
         }
         else if (strncmp(buf, "add article", 11) == 0) {
 
+                sleep(20);
             char newTitle[LEN_TITLE];
             char newTheme[LEN_THEME];
             char newBody[LEN_BODY];
@@ -333,13 +339,16 @@ void* clientFun(void* newSocket){
                 strcpy(newBody, buf);
             }
 
+            pthread_mutex_lock(&lock);
             if (addArticle(newTheme, newTitle, newBody) < 0){
+                pthread_mutex_unlock(&lock);
                 strcpy(ans, "Add article error");
                 if (send(socket, ans, BUF_SIZE, 0) < 0){
                     cout << "Error: Send to " << socket << " fail" << endl;
                     continue;
                 }
             }
+            pthread_mutex_unlock(&lock);
 
             strcpy(ans, "Add article success!");
             if (send(socket, ans, BUF_SIZE, 0) < 0){
@@ -354,9 +363,11 @@ void* clientFun(void* newSocket){
             strncpy(tmp, buf+10, BUF_SIZE-10);
             int themeID = atoi(tmp);
 
+            pthread_mutex_lock(&lock);
             for (int i = themeID; i < themesCount-1; ++i) {
                 strcpy(themes[i], themes[i+1]);
             }
+            pthread_mutex_unlock(&lock);
 
             strcpy(ans, "Del theme success!");
             if (send(socket, ans, BUF_SIZE, 0) < 0){
@@ -371,7 +382,9 @@ void* clientFun(void* newSocket){
             strncpy(tmp, buf+12, BUF_SIZE-12);
             int articleID = atoi(tmp);
 
+            pthread_mutex_lock(&lock);
             if (delArticle(articleID)) {
+                pthread_mutex_unlock(&lock);
                 strcpy(ans, "Del article success!");
                 if (send(socket, ans, BUF_SIZE, 0) < 0) {
                     cout << "Error: Send to " << socket << " fail" << endl;
@@ -379,6 +392,7 @@ void* clientFun(void* newSocket){
                 }
             }
             else{
+                pthread_mutex_unlock(&lock);
                 strcpy(ans, "Del article error");
                 if (send(socket, ans, BUF_SIZE, 0) < 0) {
                     cout << "Error: Send to " << socket << " fail" << endl;
@@ -396,6 +410,7 @@ void* clientFun(void* newSocket){
                 continue;
             }
         }
+
     }
 
     if (numRead == 0) {
@@ -560,7 +575,17 @@ int main() {
             break;
         }
         else if (strncmp(command, "kill", 4) == 0) {
-            cout << "oops" << endl;
+
+            char tmp[10];
+            memset(tmp, 0, 10);
+            strncpy(tmp, command+5, 10-5);
+            int threadID = atoi(tmp);
+
+            shut(clientStruct[threadID-1].id);
+
+            pthread_join(clientStruct[threadID-1].thread, NULL);
+
+            cout << "Kill success" << endl;
         }
         else
             cout << "Error: Unknown command" << endl;
