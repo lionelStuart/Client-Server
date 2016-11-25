@@ -208,18 +208,37 @@ void* clientFun(void* newSocket){
                 strcat(tmp, themes[i]);
                 strcat(tmp, "\n");
             }
-            strcpy(ans, "Welcome!");
+            strcpy(ans, tmp);
             if (send(socket, ans, BUF_SIZE, 0) < 0){
                 cout << "Error: Send to " << socket << " fail" << endl;
                 continue;
             }
 
         }
-        else if (strncmp(buf, "show articles in theme", 22) == 0) {    // показать список статей в теме
+        else if (strcmp(buf, "show articles") == 0) {    // показать список всех статей
 
             char tmp[BUF_SIZE];
             memset(tmp, 0, BUF_SIZE);
-            strncpy(tmp, buf+23, BUF_SIZE-23);
+            for (int i = 0; i < newsCount; i++){
+                    char str[3];
+                    sprintf(str, "%d", news[i].id);
+                    strcat(tmp, str);
+                    strcat(tmp, " ");
+                    strcat(tmp, news[i].title);
+                    strcat(tmp, "\n");
+            }
+            strcpy(ans, tmp);
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
+
+        }
+        else if (strncmp(buf, "show theme", 10) == 0) {
+
+            char tmp[BUF_SIZE];
+            memset(tmp, 0, BUF_SIZE);
+            strncpy(tmp, buf+11, BUF_SIZE-11);
             int themeID = atoi(tmp);
             memset(tmp, 0, BUF_SIZE);
             for (int i = 0; i < newsCount; i++){
@@ -232,33 +251,150 @@ void* clientFun(void* newSocket){
                     strcat(tmp, "\n");
                 }
             }
-            strcpy(ans, "Welcome!");
+            strcpy(ans, tmp);
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
+        }
+        else if (strncmp(buf, "show article", 12) == 0) {    // показать статью
+
+            char tmp[BUF_SIZE];
+            memset(tmp, 0, BUF_SIZE);
+            strncpy(tmp, buf+13, BUF_SIZE-13);
+            int articleID = atoi(tmp);
+            memset(tmp, 0, BUF_SIZE);
+            for (int i = 0; i < newsCount; i++){
+                if (news[i].id == articleID) {
+                    strcat(tmp, "Title: ");
+                    strcat(tmp, news[i].title);
+                    strcat(tmp, "\nTheme: ");
+                    strcat(tmp, news[i].theme);
+                    strcat(tmp, "\nBody:\n");
+                    strcat(tmp, news[i].body);
+                }
+            }
+            strcpy(ans, tmp);
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
+        }
+        else if (strncmp(buf, "add theme", 9) == 0) {
+
+            char tmp[BUF_SIZE];
+            memset(tmp, 0, BUF_SIZE);
+            strncpy(tmp, buf+10, BUF_SIZE-10);
+
+            strcpy(themes[themesCount++], tmp);
+
+            strcpy(ans, "Add theme success!");
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
+        }
+        else if (strncmp(buf, "add article", 11) == 0) {
+
+            char newTitle[LEN_TITLE];
+            char newTheme[LEN_THEME];
+            char newBody[LEN_BODY];
+            memset(newTitle, 0, LEN_TITLE);
+            memset(newTheme, 0, LEN_THEME);
+            memset(newBody, 0, LEN_BODY);
+
+            strcpy(ans, "Title: ");
             if (send(socket, ans, BUF_SIZE, 0) < 0){
                 cout << "Error: Send to " << socket << " fail" << endl;
                 continue;
             }
 
-        }
-        else if (strncmp(buf, "show theme", 10) == 0) {
+            if ( (numRead = readn(socket, buf, BUF_SIZE)) > 0 ) {
+                strcpy(newTitle, buf);
+            }
 
-        }
-        else if (strncmp(buf, "show article", 12) == 0) {
+            strcpy(ans, "Theme: ");
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
 
-        }
-        else if (strncmp(buf, "add theme", 9) == 0) {
+            if ( (numRead = readn(socket, buf, BUF_SIZE)) > 0 ) {
+                strcpy(newTheme, buf);
+            }
 
-        }
-        else if (strncmp(buf, "add article", 11) == 0) {
+            strcpy(ans, "Body: ");
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
 
+            if ( (numRead = readn(socket, buf, BUF_SIZE)) > 0 ) {
+                strcpy(newBody, buf);
+            }
+
+            if (addArticle(newTheme, newTitle, newBody) < 0){
+                strcpy(ans, "Add article error");
+                if (send(socket, ans, BUF_SIZE, 0) < 0){
+                    cout << "Error: Send to " << socket << " fail" << endl;
+                    continue;
+                }
+            }
+
+            strcpy(ans, "Add article success!");
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
         }
         else if (strncmp(buf, "del theme", 9) == 0) {
 
+            char tmp[BUF_SIZE];
+            memset(tmp, 0, BUF_SIZE);
+            strncpy(tmp, buf+10, BUF_SIZE-10);
+            int themeID = atoi(tmp);
+
+            for (int i = themeID; i < themesCount-1; ++i) {
+                strcpy(themes[i], themes[i+1]);
+            }
+
+            strcpy(ans, "Del theme success!");
+            if (send(socket, ans, BUF_SIZE, 0) < 0){
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
         }
         else if (strncmp(buf, "del article", 11) == 0) {
 
+            char tmp[BUF_SIZE];
+            memset(tmp, 0, BUF_SIZE);
+            strncpy(tmp, buf+12, BUF_SIZE-12);
+            int articleID = atoi(tmp);
+
+            if (delArticle(articleID)) {
+                strcpy(ans, "Del article success!");
+                if (send(socket, ans, BUF_SIZE, 0) < 0) {
+                    cout << "Error: Send to " << socket << " fail" << endl;
+                    continue;
+                }
+            }
+            else{
+                strcpy(ans, "Del article error");
+                if (send(socket, ans, BUF_SIZE, 0) < 0) {
+                    cout << "Error: Send to " << socket << " fail" << endl;
+                    continue;
+                }
+            }
         }
         else if (strcmp(buf, "exit") == 0){
             break;
+        }
+        else {
+            strcpy(ans, "Invalid command");
+            if (send(socket, ans, BUF_SIZE, 0) < 0) {
+                cout << "Error: Send to " << socket << " fail" << endl;
+                continue;
+            }
         }
     }
 
